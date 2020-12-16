@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -21,7 +22,40 @@ import (
 	"github.com/axgle/mahonia"
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/text/encoding/unicode"
+	"gopkg.in/yaml.v2"
 )
+
+var (
+	db *sqlx.DB
+	// lock sync.Mutex
+	conf struct {
+		DiverName string   `yaml:"DiverName"`
+		DB        string   `yaml:"DB"`
+		LimitChan int      `yaml:"LimitChan"`
+		SQL       []string `yaml:"SQL"`
+	}
+	EXCEL_COL = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}
+)
+
+func TestMain(t *testing.M) {
+	c, err := ioutil.ReadFile("conf.yml")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	err = yaml.Unmarshal(c, &conf)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	// log.SetPrefix("[Info]")
+	// log.SetFlags(log.LstdFlags | log.LUTC)
+	// conf["LimitChan"].(json.Number).Int64()
+
+	db, err = sqlx.Connect(conf.DB, conf.DiverName)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+}
 
 func TestMultipleCSV(t *testing.T) {
 	defer db.Close()

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/xid"
+
 	"github.com/360EntSecGroup-Skylar/excelize"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
@@ -20,19 +22,27 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var (
-	db *sqlx.DB
-	// lock sync.Mutex
-	conf struct {
-		DiverName string   `yaml:"DiverName"`
-		DB        string   `yaml:"DB"`
-		LimitChan int      `yaml:"LimitChan"`
-		SQL       []string `yaml:"SQL"`
-	}
-	EXCEL_COL = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}
-)
+func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
-func init() {
+	path := flag.String("p", "", "path of excel file")
+	mode := flag.String("m", "i", "i/e, import/export")
+	generate := flag.String("g", "", "automatically generate columns, separated with comma")
+	// title := flag.String("t", "未命名.xlsx", "导出的excel名称")
+	flag.Parse()
+
+	var (
+		db *sqlx.DB
+		// lock sync.Mutex
+		conf struct {
+			DiverName string   `yaml:"DiverName"`
+			DB        string   `yaml:"DB"`
+			LimitChan int      `yaml:"LimitChan"`
+			SQL       []string `yaml:"SQL"`
+		}
+		EXCEL_COL = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}
+	)
+
 	c, err := ioutil.ReadFile("conf.yml")
 	if err != nil {
 		log.Fatalln(err)
@@ -41,26 +51,19 @@ func init() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	//	log.SetPrefix("[Info]")
-	//	log.SetFlags(log.LstdFlags | log.LUTC)
+	// log.SetPrefix("[Info]")
+	// log.SetFlags(log.LstdFlags | log.LUTC)
 	// conf["LimitChan"].(json.Number).Int64()
+
 	db, err = sqlx.Connect(conf.DB, conf.DiverName)
 	if err != nil {
 		panic(err)
 	}
-}
-
-func main() {
 	defer db.Close()
-	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	path := flag.String("p", "", "excel文件路径")
-	mode := flag.String("m", "i", "i/e, 导入/导出")
-	// title := flag.String("t", "未命名.xlsx", "导出的excel名称")
-	flag.Parse()
 	if *mode == "i" { // 导入excel数据
 		if *path == "" {
-			log.Fatalln("未指定要导入的excel路径")
+			log.Fatalln("Please specify the file path of excel.")
 		}
 		xlsx, err := excelize.OpenFile(*path)
 		if err != nil {
@@ -79,18 +82,31 @@ func main() {
 				buffer.WriteString(`INSERT INTO `)
 				buffer.WriteString(sheet.Name)
 				buffer.WriteString(`(`)
+				if *generate != "" {
+					buffer.WriteString(*generate)
+					buffer.WriteString(",")
 
-				buffer.WriteString(strings.Join(rows[0], `,`))
-				buffer.WriteString(`)VALUES(`)
-				l := len(rows[0])
-				buffer.WriteString(strings.TrimSuffix(strings.Repeat(`?,`, l), `,`))
+					buffer.WriteString(strings.Join(rows[0], ","))
+					buffer.WriteString(`)VALUES(`)
+
+					buffer.WriteString(strings.TrimSuffix(strings.Repeat("?,", len(strings.Split(*generate, ","))), ","))
+
+					buffer.WriteString(",")
+
+					buffer.WriteString(strings.TrimSuffix(strings.Repeat("?,", len(rows[0])), ","))
+				} else {
+					buffer.WriteString(strings.Join(rows[0], ","))
+					buffer.WriteString(`)VALUES(`)
+					buffer.WriteString(strings.TrimSuffix(strings.Repeat("?,", len(rows[0])), ","))
+				}
+
 				buffer.WriteString(`)`)
 
 				query := buffer.String()
 				limitChan := make(chan bool, conf.LimitChan)
 				wg := sync.WaitGroup{}
 				for i, row := range rows[1:] {
-					fmt.Println(`------正在处理第`, i, `行`)
+					log.Println(`------Line `, i, ` is being processed`)
 					limitChan <- true
 					wg.Add(1)
 					go func(i int, r []string) {
@@ -99,10 +115,15 @@ func main() {
 							<-limitChan
 							if err := recover(); err != nil {
 								// logger.Printf("第%d行: %+v, 错误: %v", i+1, r, err)
-								fmt.Printf("第%d行: %+v, 错误: %v\n", i+1, r, err)
+								log.Printf("Line %d error: %+v.: %v\n", i+1, r, err)
 							}
 						}()
 						var args []interface{}
+						if *generate != "" {
+							for range strings.Split(*generate, ",") {
+								args = append(args, xid.New().String())
+							}
+						}
 						for _, v := range r {
 							args = append(args, v)
 						}

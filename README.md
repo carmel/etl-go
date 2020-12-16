@@ -7,6 +7,10 @@
 
 - 注意Excel的格式：页签即表名，表格第一行对应了各个字段的名字。
 
+- 需要自动生成的字段使用参数g指定（多个字段以逗号分隔，生成库为`github.com/rs/xid`）
+
+- 例如将`name,gender,org`三个字段导入到`student`表中: > ./etl -p "./demo.xlsx" -m i -g id
+
 # 下载
 下载请前往[Releases页面](https: //github.com/carmel/etl-go/releases)  
 
