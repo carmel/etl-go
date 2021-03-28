@@ -37,7 +37,7 @@ func main() {
 		conf struct {
 			DiverName string   `yaml:"DiverName"`
 			DB        string   `yaml:"DB"`
-			LimitChan int      `yaml:"LimitChan"`
+			PoolSize  int      `yaml:"PoolSize"`
 			SQL       []string `yaml:"SQL"`
 		}
 		EXCEL_COL = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}
@@ -103,16 +103,13 @@ func main() {
 				buffer.WriteString(`)`)
 
 				query := buffer.String()
-				limitChan := make(chan bool, conf.LimitChan)
-				wg := sync.WaitGroup{}
+				sem := NewPool(conf.PoolSize, &sync.WaitGroup{})
 				for i, row := range rows[1:] {
 					log.Println(`------Line `, i, ` is being processed`)
-					limitChan <- true
-					wg.Add(1)
+					sem.Acquire()
 					go func(i int, r []string) {
 						defer func() {
-							wg.Done()
-							<-limitChan
+							sem.Release()
 							if err := recover(); err != nil {
 								// logger.Printf("第%d行: %+v, 错误: %v", i+1, r, err)
 								log.Printf("Line %d error: %+v.: %v\n", i+1, r, err)
@@ -130,7 +127,7 @@ func main() {
 						db.MustExec(query, args...)
 					}(i+1, row)
 				}
-				wg.Wait()
+				sem.Wait()
 				// ticker := time.NewTicker(2 * time.Second) //定时器,每2秒钟执行一次
 				// for c := range ticker.C {
 

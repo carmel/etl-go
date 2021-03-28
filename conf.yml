@@ -1,5 +1,5 @@
 DiverName: "root:root@tcp(127.0.0.1:3306)/student?charset=utf8mb4"
 DB: "mysql"
-LimitChan: 15
+PoolSize: 15
 SQL:
   - SELECT rq 日期, bjmc 班级, if(dmlbm='04', '缺勤', '正常') 考勤, xh 学号,xm 姓名 FROM performance order by bjmc,rq
