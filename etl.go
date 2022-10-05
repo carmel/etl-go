@@ -14,36 +14,37 @@ import (
 
 	"github.com/rs/xid"
 
-	"github.com/360EntSecGroup-Skylar/excelize"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/xuri/excelize/v2"
 	"gopkg.in/yaml.v2"
+)
+
+var (
+	db *sqlx.DB
+	// lock sync.Mutex
+	conf struct {
+		DiverName string   `yaml:"DiverName"`
+		DB        string   `yaml:"DB"`
+		PoolSize  int      `yaml:"PoolSize"`
+		SQL       []string `yaml:"SQL"`
+	}
+	EXCEL_COL = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}
+	config    = flag.String("c", "conf.yml", "config yaml path")
+	path      = flag.String("p", "/Users/carmel/Desktop/4311.xlsx", "path of excel file")
+	mode      = flag.String("m", "i", "i/e, import/export")
+	generate  = flag.String("g", "", "automatically generate columns, separated with comma")
 )
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	path := flag.String("p", "", "path of excel file")
-	mode := flag.String("m", "i", "i/e, import/export")
-	generate := flag.String("g", "", "automatically generate columns, separated with comma")
 	// title := flag.String("t", "未命名.xlsx", "导出的excel名称")
 	flag.Parse()
 
-	var (
-		db *sqlx.DB
-		// lock sync.Mutex
-		conf struct {
-			DiverName string   `yaml:"DiverName"`
-			DB        string   `yaml:"DB"`
-			PoolSize  int      `yaml:"PoolSize"`
-			SQL       []string `yaml:"SQL"`
-		}
-		EXCEL_COL = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}
-	)
-
-	c, err := ioutil.ReadFile("conf.yml")
+	c, err := ioutil.ReadFile(*config)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -105,7 +106,7 @@ func main() {
 				query := buffer.String()
 				sem := NewPool(conf.PoolSize, &sync.WaitGroup{})
 				for i, row := range rows[1:] {
-					log.Println(`------Line `, i, ` is being processed`)
+					log.Println(`------Line `, i+1, ` being processed`)
 					sem.Acquire()
 					go func(i int, r []string) {
 						defer func() {

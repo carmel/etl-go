@@ -18,26 +18,132 @@ import (
 	"testing"
 	"time"
 
-	"github.com/360EntSecGroup-Skylar/excelize"
 	"github.com/axgle/mahonia"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/xid"
+	"github.com/xuri/excelize/v2"
 	"golang.org/x/text/encoding/unicode"
 	"gopkg.in/yaml.v2"
 )
 
-var (
-	db *sqlx.DB
-	// lock sync.Mutex
-	conf struct {
-		DiverName string   `yaml:"DiverName"`
-		DB        string   `yaml:"DB"`
-		LimitChan int      `yaml:"LimitChan"`
-		SQL       []string `yaml:"SQL"`
+func TestEtl(t *testing.T) {
+	defer db.Close()
+	if *mode == "i" { // 导入excel数据
+		if *path == "" {
+			log.Fatalln("Please specify the file path of excel.")
+		}
+		xlsx, err := excelize.OpenFile(*path)
+		if err != nil {
+			log.Println(`open excel`, err)
+		}
+
+		if err != nil {
+			panic(err)
+		}
+		for _, sheet := range xlsx.WorkBook.Sheets.Sheet {
+			if rows, err := xlsx.GetRows(sheet.Name); err == nil && len(rows) != 0 {
+				var buffer bytes.Buffer
+				buffer.WriteString(`INSERT INTO `)
+				buffer.WriteString(sheet.Name)
+				buffer.WriteString(`(`)
+				if *generate != "" {
+					buffer.WriteString(*generate)
+					buffer.WriteString(",")
+
+					buffer.WriteString(strings.Join(rows[0], ","))
+					buffer.WriteString(`)VALUES(`)
+
+					buffer.WriteString(strings.TrimSuffix(strings.Repeat("?,", len(strings.Split(*generate, ","))), ","))
+
+					buffer.WriteString(",")
+
+					buffer.WriteString(strings.TrimSuffix(strings.Repeat("?,", len(rows[0])), ","))
+				} else {
+					buffer.WriteString(strings.Join(rows[0], ","))
+					buffer.WriteString(`)VALUES(`)
+					buffer.WriteString(strings.TrimSuffix(strings.Repeat("?,", len(rows[0])), ","))
+				}
+
+				buffer.WriteString(`)`)
+
+				query := buffer.String()
+				fmt.Println(query)
+				sem := NewPool(conf.PoolSize, &sync.WaitGroup{})
+				for i, row := range rows[1:] {
+					log.Println(`------Line `, i+1, ` is being processed`)
+					sem.Acquire()
+					go func(i int, r []string) {
+						defer func() {
+							sem.Release()
+							if err := recover(); err != nil {
+								// logger.Printf("第%d行: %+v, 错误: %v", i+1, r, err)
+								log.Printf("Line %d error: %+v.: %v\n", i+1, r, err)
+							}
+						}()
+						var args []interface{}
+						if *generate != "" {
+							for range strings.Split(*generate, ",") {
+								args = append(args, xid.New().String())
+							}
+						}
+						for _, v := range r {
+							args = append(args, v)
+						}
+						db.MustExec(query, args...)
+					}(i+1, row)
+				}
+				sem.Wait()
+			}
+		}
+	} else { // 导出指定sql数据
+
+		var rows *sqlx.Rows
+		var err error
+		var index int
+		var title []string
+		xlsx := excelize.NewFile()
+		for i, sql := range conf.SQL {
+			index = 0
+			rows, err = db.Queryx(sql)
+			if err != nil {
+				panic(err)
+			}
+
+			if i != 0 {
+				xlsx.NewSheet(fmt.Sprintf("%s%d", "Sheet", i+1))
+			}
+
+			for rows.Next() {
+				index++
+				if index == 1 {
+					title, _ = rows.Columns()
+					for n, v := range title {
+						if err = xlsx.SetCellValue(fmt.Sprintf("%s%d", "Sheet", i+1), fmt.Sprintf("%s%d", EXCEL_COL[n], 1), v); err != nil {
+							log.Println(`SetCellValue`, err)
+						}
+					}
+				}
+				rs, _ := rows.SliceScan()
+				for n, v := range rs {
+					// fmt.Println(fmt.Sprintf("%s%d", "Sheet", i+1), fmt.Sprintf("%s%d", EXCEL_COL[n+1], index))
+					if err = xlsx.SetCellValue(fmt.Sprintf("%s%d", "Sheet", i+1), fmt.Sprintf("%s%d", EXCEL_COL[n], index+1), v); err != nil {
+						log.Println(`SetCellValue`, err)
+					}
+				}
+			}
+		}
+
+		err = xlsx.SaveAs(fmt.Sprintf("%s.xlsx", strconv.FormatInt(time.Now().Unix(), 10)))
+		if err != nil {
+			panic(err)
+		}
+
 	}
-	EXCEL_COL = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"}
-)
+}
 
 func TestMain(t *testing.M) {
+	flag.Parse()
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	c, err := ioutil.ReadFile("conf.yml")
 	if err != nil {
 		log.Fatalln(err)
@@ -54,7 +160,7 @@ func TestMain(t *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	defer db.Close()
+	t.Run()
 }
 
 func TestMultipleCSV(t *testing.T) {
@@ -172,7 +278,7 @@ func TestExcelExport(t *testing.T) {
 				buffer.WriteString(`)`)
 
 				query := buffer.String()
-				limitChan := make(chan bool, conf.LimitChan)
+				limitChan := make(chan bool, conf.PoolSize)
 				wg := sync.WaitGroup{}
 				for i, row := range rows[1:] {
 					fmt.Println(`------正在处理第`, i, `行`)

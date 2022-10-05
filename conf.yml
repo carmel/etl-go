@@ -1,4 +1,5 @@
-DiverName: "root:root@tcp(127.0.0.1:3306)/student?charset=utf8mb4"
+# DiverName: "root:root@tcp(127.0.0.1:3306)/student?charset=utf8mb4"
+DiverName: "spiritual:2020@SpiritDB@tcp(47.97.72.160:3306)/ebook_test?charset=utf8mb4"
 DB: "mysql"
 PoolSize: 15
 SQL:
