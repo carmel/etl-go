@@ -106,7 +106,7 @@ func main() {
 				query := buffer.String()
 				sem := NewPool(conf.PoolSize, &sync.WaitGroup{})
 				for i, row := range rows[1:] {
-					log.Println(`------Line `, i+1, ` being processed`)
+					log.Println(`------Processing line `, i+1)
 					sem.Acquire()
 					go func(i int, r []string) {
 						defer func() {

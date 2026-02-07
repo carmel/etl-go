@@ -70,7 +70,7 @@ func TestEtl(t *testing.T) {
 				fmt.Println(query)
 				sem := NewPool(conf.PoolSize, &sync.WaitGroup{})
 				for i, row := range rows[1:] {
-					log.Println(`------Line `, i+1, ` is being processed`)
+					log.Println(`------Processing Line `, i+1)
 					sem.Acquire()
 					go func(i int, r []string) {
 						defer func() {
